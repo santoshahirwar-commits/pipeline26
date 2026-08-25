@@ -1,64 +1,56 @@
-name: Terraform Preprod CI/CD
+name: Terraform CI
 
 on:
   push:
     branches:
-      - main
-      - feature
-
+      - feature/*
   pull_request:
     branches:
       - main
 
-  workflow_dispatch:
-
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
-  terraform:
-    name: Terraform Preprod
+  terraform-init-validate:
+    if: startsWith(github.ref, 'refs/heads/feature/')
     runs-on: ubuntu-latest
-
     defaults:
       run:
-        working-directory: ./azure-pipeline-with-github-action/environment/preprod
-
+        working-directory: ./environment/preprod
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v3
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          auth-type: SERVICE_PRINCIPAL
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Check Azure Login
-        run: az account show
-
-      - name: Terraform Version
-        run: terraform version
-
-      - name: Terraform Format Check
-        run: terraform fmt -check -recursive
+        uses: hashicorp/setup-terraform@v2
 
       - name: Terraform Init
-        run: terraform init -upgrade
+        run: terraform init
 
       - name: Terraform Validate
         run: terraform validate
 
+  terraform-plan:
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./environment/preprod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      - name: Terraform Init
+        run: terraform init
+
       - name: Terraform Plan
         run: terraform plan -out=tfplan
-
-      - name: Terraform Apply
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: terraform apply -auto-approve tfplan
